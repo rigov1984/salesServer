@@ -1,7 +1,10 @@
+const fs = require("fs");
+const path = require("path");
 const bcrypt = require("bcrypt-nodejs");
 const jwt = require("../services/jwt");
 const User = require("../models/user");
 const { param } = require("../routers/user");
+const { exists } = require("../models/user");
 //const user = require("../models/user");
 
 function signUp(req, res) {
@@ -107,10 +110,81 @@ function getUsersActive(req, res) {
 
 function uploadAvatar(req, res) {
     const params = req.params;
-
+    //Comprobamos si el usuario existe
     User.findById({ _id: params.id }, (err, userData) => {
         if (err) {
-            res.status(500).send({ message: "Error del servidor" });
+            res.status(500).send({ message: "Error del servidor." });
+        } else {
+            if (!userData) {
+                res.status(500).send({ message: "No se ha encontrado ningun usuario." });
+            } else {
+                //si el usuario existe recuperamos la imagen
+                let user = userData;
+                if (req.files) {
+                    let filePath = req.files.avatar.path;
+                    let fileSplit = filePath.split("/");
+                    let fileName = fileSplit[2];
+
+                    let extSplit = fileName.split(".");
+                    let fileExt = extSplit[1];
+                    //Comprobamos la extension
+                    if (fileExt !== "png" && fileExt !== "jpg") {
+                        res.status(400).send({ message: "La extension de la imagen no es valida.(solo se admiten .png y .jpg)" });
+                    } else {
+                        //Actualizamos la variable user y le agregamos la imagen
+                        user.avatar = fileName;
+                        //updatea al usuario con los datos que tenga
+                        User.findByIdAndUpdate({ _id: params.id }, user, (err, userResult) => {
+                            if (err) {
+                                res.status(500).send({ message: "Error del servidor." })
+                            } else {
+                                if (!userResult) {
+                                    res.status(404).send({ message: "No se ha encontrado ningun usuario." });
+                                } else {
+                                    //res.status(200).send({ user: userResult });
+                                    res.status(200).send({ avatarName: fileName });
+
+                                }
+                            }
+                        })
+                    }
+                }
+            }
+        }
+    })
+
+}
+
+function getAvatar(req, res) {
+    const avatarName = req.params.avatarName;
+    const filePath = "./uploads/avatar/" + avatarName;
+    //filesistem
+    fs.exists(filePath, exists => {
+        if (!exists) {
+            res.status(404).send({ message: "El avatar que busca no existe." })
+        } else {
+            //enviamos la imagen
+            res.sendFile(path.resolve(filePath));
+        }
+    })
+
+}
+
+//updatear los datos del usuario en la bd
+function updateUser(req, res) {
+    //recuperamos los datos del usuario mediante el body
+    const userData = req.body;
+    const params = req.params;//conseguimos el id que le estamos enviando por parametro
+
+    User.findByIdAndUpdate({ _id: params.id }, userData, (err, userUpdate) => {
+        if (err) {
+            res.status(500).send({ message: "Error de servidor." });
+        } else {
+            if (!userUpdate) {
+                res.status(404).send({ message: "No se ha encontrado ningun usuario." });
+            } else {
+                res.status(200).send({ message: "Usuario actualizado correctamente." })
+            }
         }
     })
 
@@ -122,5 +196,7 @@ module.exports = {
     , getUsers
     , getUsersActive
     , uploadAvatar
+    , getAvatar
+    , updateUser
 };
 
