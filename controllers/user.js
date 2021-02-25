@@ -5,6 +5,7 @@ const jwt = require("../services/jwt");
 const User = require("../models/user");
 const { param } = require("../routers/user");
 const { exists } = require("../models/user");
+const user = require("../models/user");
 //const user = require("../models/user");
 
 function signUp(req, res) {
@@ -86,7 +87,7 @@ function signIn(req, res) {
 
 function getUsers(req, res) {
     //nos devuelve todos los usuarios de la base de datos
-    user.find().then(users => {
+    User.find().then(users => {
         if (!users) {
             res.status(404).send({ message: "No se ha encontrado ningun usuario." })
         } else {
@@ -99,7 +100,7 @@ function getUsersActive(req, res) {
     const query = req.query; //obtenemos el query del request
 
     //nos devuelve todos los usuarios activos de la base de datos
-    user.find({ active: query.active }).then(users => {
+    User.find({ active: query.active }).then(users => {
         if (!users) {
             res.status(404).send({ message: "No se ha encontrado ningun usuario." })
         } else {
@@ -171,10 +172,23 @@ function getAvatar(req, res) {
 }
 
 //updatear los datos del usuario en la bd
-function updateUser(req, res) {
+//la funcion es asincrona para que espere que acabe de encriptar la contraseña para updatear al usuario. 
+async function updateUser(req, res) {
     //recuperamos los datos del usuario mediante el body
-    const userData = req.body;
+    let userData = req.body;
+    userData.email = req.body.email.toLowerCase();
     const params = req.params;//conseguimos el id que le estamos enviando por parametro
+    //encriptamos la contraseña al actualizarla
+    if (userData.password) {
+        await bcrypt.hash(userData.password, null, null, (err, hash) => {
+            if (err) {
+                res.status(500).send({ message: "Error al encriptar la contraseña." })
+            } else {
+                //el hash es la contraseña ya encriptada.
+                userData.password = hash;
+            }
+        });
+    };
 
     User.findByIdAndUpdate({ _id: params.id }, userData, (err, userUpdate) => {
         if (err) {
@@ -190,6 +204,84 @@ function updateUser(req, res) {
 
 }
 
+function activateUser(req, res) {
+    const { id } = req.params;
+    const { active } = req.body;
+
+    //buscamos al modelo User
+    User.findByIdAndUpdate(id, { active }, (err, userStored) => {
+        if (err) {
+            res.status(500).send({ message: "Error de servidor." });
+        } else {
+            if (!userStored) {
+                res.status(404).send({ message: "No se ha encontrado el usuario." });
+            } else {
+                if (active === true) {
+                    res.status(200).send({ message: "Usuario activado Correctamente." });
+                } else {
+                    res.status(200).send({ message: "Usuario desactivado Correctamente." });
+                }
+            }
+        }
+    });
+}
+
+function deleteUser(req, res) {
+    const { id } = req.params;
+    user.findByIdAndRemove(id, (err, userDeleted) => {
+        if (err) {
+            res.status(500).send({ message: "Error del servidor." });
+        } else {
+            //si no se encuentra el usuario
+            if (!userDeleted) {
+                res.status(404).send({ message: "Usuario no encontrado" })
+            } else {
+                res.status(200).send({ message: "El usuario ha sido eliminado correctamente." })
+            }
+        }
+    })
+
+}
+
+function signUpAdmin(req, res) {
+    //inicializamos un nuevo usuario
+    const user = new User();
+
+    const { name, lastname, email, role, password } = req.body;
+    user.name = name;
+    user.lastname = lastname;
+    user.email = email.toLowerCase();
+    user.role = role;
+    user.active = true;
+
+    if (!password) {
+        res.status(500).send({ message: "La contraseña es obligatoria." })
+    } else {
+        bcrypt.hash(password, null, null, (err, hash) => {
+            if (err) {
+                res.status(500).send({ message: "Error al encriptar la contraseña." })
+            } else {
+                user.password = hash;
+                //creamos el usuario
+                user.save((err, userStored) => {
+                    if (err) {
+                        res.status(500).send({ message: "El usuario ya existe." })
+                    } else {
+                        if (!userStored) {
+                            res.status(500).send({ message: "Error al crear el nuevo usuario." });
+                        } else {
+                            //res.status(200).send({ user: userStored });
+                            res.status(200).send({ message: "Usuario creado correctamente." });
+
+                        }
+                    }
+                })
+            }
+        });
+    }
+
+}
+
 module.exports = {
     signUp
     , signIn
@@ -198,5 +290,8 @@ module.exports = {
     , uploadAvatar
     , getAvatar
     , updateUser
+    , activateUser
+    , deleteUser
+    , signUpAdmin
 };
 
